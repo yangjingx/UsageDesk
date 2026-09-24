@@ -423,10 +423,37 @@ struct UsageEditor: View {
 final class CardWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
-}
 
-final class DraggableHostingView<Content: View>: NSHostingView<Content> {
-    override var mouseDownCanMoveWindow: Bool { true }
+    private var dragAnchor: NSPoint?
+
+    override func sendEvent(_ event: NSEvent) {
+        switch event.type {
+        case .leftMouseDown:
+            let point = event.locationInWindow
+            let topButtons = NSRect(x: 245, y: 208, width: 85, height: 60)
+            let dashboardLink = NSRect(x: 210, y: 0, width: 120, height: 48)
+            if !topButtons.contains(point) && !dashboardLink.contains(point) {
+                dragAnchor = point
+                return
+            }
+        case .leftMouseDragged:
+            if let dragAnchor {
+                let point = event.locationInWindow
+                setFrameOrigin(NSPoint(x: frame.origin.x + point.x - dragAnchor.x,
+                                       y: frame.origin.y + point.y - dragAnchor.y))
+                return
+            }
+        case .leftMouseUp:
+            if dragAnchor != nil {
+                dragAnchor = nil
+                saveFrame(usingName: "UsageDeskWindow")
+                return
+            }
+        default:
+            break
+        }
+        super.sendEvent(event)
+    }
 }
 
 @MainActor
@@ -446,13 +473,13 @@ final class AppController: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         window = CardWindow(contentRect: NSRect(x: 0, y: 0, width: 330, height: 268),
                             styleMask: [.borderless], backing: .buffered, defer: false)
-        window.contentView = DraggableHostingView(rootView: WidgetCard(store: store, onRefresh: { [weak self] in
+        window.contentView = NSHostingView(rootView: WidgetCard(store: store, onRefresh: { [weak self] in
             self?.refreshUsage()
         }))
         window.backgroundColor = .clear
         window.isOpaque = false
         window.hasShadow = true
-        window.isMovableByWindowBackground = true
+        window.isMovableByWindowBackground = false
         window.level = keepOnTop ? .floating : .normal
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.setFrameAutosaveName("UsageDeskWindow")
