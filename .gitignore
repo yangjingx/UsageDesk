@@ -1,0 +1,6 @@
+.DS_Store
+work/
+*.swp
+*.swo
+
+outputs/
