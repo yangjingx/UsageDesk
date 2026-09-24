@@ -17,10 +17,13 @@ struct UsageSnapshot: Codable, Sendable {
     var weekUsed: Double?
     var fiveReset: Date?
     var weekReset: Date?
+    var primaryDurationMins: Int?
+    var secondaryDurationMins: Int?
     var updatedAt: Date?
     var source: String?
 
     static let empty = UsageSnapshot(fiveUsed: nil, weekUsed: nil, fiveReset: nil, weekReset: nil,
+                                     primaryDurationMins: nil, secondaryDurationMins: nil,
                                      updatedAt: nil, source: nil)
 }
 
@@ -67,6 +70,11 @@ enum FetchResult: Sendable {
 
 enum UsageFetcher {
     private static func codexURL() -> URL? {
+        #if USAGEDESK_TEST
+        if let path = ProcessInfo.processInfo.environment["USAGEDESK_TEST_CODEX"] {
+            return URL(fileURLWithPath: path)
+        }
+        #endif
         let candidates = [
             "/Applications/ChatGPT.app/Contents/Resources/codex",
             "/Applications/Codex.app/Contents/Resources/codex",
@@ -78,11 +86,12 @@ enum UsageFetcher {
             .map { URL(fileURLWithPath: $0) }
     }
 
-    private static func window(_ raw: Any?) -> (Double?, Date?) {
-        guard let info = raw as? [String: Any] else { return (nil, nil) }
+    private static func window(_ raw: Any?) -> (Double?, Date?, Int?) {
+        guard let info = raw as? [String: Any] else { return (nil, nil, nil) }
         let used = (info["usedPercent"] as? NSNumber)?.doubleValue
         let seconds = (info["resetsAt"] as? NSNumber)?.doubleValue
-        return (used, seconds.map { Date(timeIntervalSince1970: $0) })
+        let minutes = (info["windowDurationMins"] as? NSNumber)?.intValue
+        return (used, seconds.map { Date(timeIntervalSince1970: $0) }, minutes)
     }
 
     private static func parse(_ data: Data) -> FetchResult? {
@@ -91,16 +100,25 @@ enum UsageFetcher {
         if let error = object["error"] as? [String: Any] {
             return .failure((error["message"] as? String) ?? "Codex 返回了错误")
         }
-        guard let result = object["result"] as? [String: Any],
-              let limits = ((result["rateLimitsByLimitId"] as? [String: Any])?["codex"] as? [String: Any])
+        guard let result = object["result"] as? [String: Any] else {
+            return .failure("没有读取到 Codex 用量")
+        }
+        let byId = result["rateLimitsByLimitId"] as? [String: Any]
+        guard let limits = (byId?["codex"] as? [String: Any])
                 ?? (result["rateLimits"] as? [String: Any]) else {
+            if byId != nil || result["rateLimits"] != nil {
+                return .success(UsageSnapshot(fiveUsed: nil, weekUsed: nil,
+                                              fiveReset: nil, weekReset: nil,
+                                              primaryDurationMins: nil, secondaryDurationMins: nil,
+                                              updatedAt: Date(), source: "当前账户无额度窗口"))
+            }
             return .failure("没有读取到 Codex 用量")
         }
         let five = window(limits["primary"])
         let week = window(limits["secondary"])
-        guard five.0 != nil || week.0 != nil else { return .failure("用量数据为空") }
         return .success(UsageSnapshot(fiveUsed: five.0, weekUsed: week.0,
                                       fiveReset: five.1, weekReset: week.1,
+                                      primaryDurationMins: five.2, secondaryDurationMins: week.2,
                                       updatedAt: Date(), source: "自动同步"))
     }
 
@@ -160,6 +178,15 @@ enum UsageFetcher {
 private func percentText(_ value: Double?) -> String {
     guard let value else { return "—" }
     return "\(Int(value.rounded()))%"
+}
+
+private func windowTitle(_ minutes: Int?, fallback: String) -> String {
+    guard let minutes, minutes > 0 else { return fallback }
+    if minutes == 10_080 { return "每周" }
+    if minutes % 10_080 == 0 { return "\(minutes / 10_080) 周" }
+    if minutes % 1_440 == 0 { return "\(minutes / 1_440) 天" }
+    if minutes % 60 == 0 { return "\(minutes / 60) 小时" }
+    return "\(minutes) 分钟"
 }
 
 private func resetText(_ date: Date?) -> String {
@@ -293,10 +320,22 @@ struct WidgetCard: View {
                 .help("更新用量")
             }
 
-            MeterRow(title: "五小时", symbol: "clock", used: store.snapshot.fiveUsed,
-                     reset: store.snapshot.fiveReset, tint: Color(red: 0.41, green: 0.91, blue: 0.77))
-            MeterRow(title: "每周", symbol: "calendar", used: store.snapshot.weekUsed,
-                     reset: store.snapshot.weekReset, tint: Color(red: 0.59, green: 0.70, blue: 1.0))
+            if let used = store.snapshot.fiveUsed {
+                MeterRow(title: windowTitle(store.snapshot.primaryDurationMins, fallback: "主要额度"),
+                         symbol: "clock", used: used, reset: store.snapshot.fiveReset,
+                         tint: Color(red: 0.41, green: 0.91, blue: 0.77))
+            }
+            if let used = store.snapshot.weekUsed {
+                MeterRow(title: windowTitle(store.snapshot.secondaryDurationMins, fallback: "附加额度"),
+                         symbol: "clock", used: used, reset: store.snapshot.weekReset,
+                         tint: Color(red: 0.59, green: 0.70, blue: 1.0))
+            }
+            if store.snapshot.fiveUsed == nil && store.snapshot.weekUsed == nil {
+                Text(store.isRefreshing ? "正在读取本机额度…" : "当前账户没有可显示的用量窗口")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.7))
+                    .frame(maxWidth: .infinity, minHeight: 95)
+            }
 
             HStack {
                 Text(store.isRefreshing ? "正在同步…" : (store.lastError == nil ?
@@ -332,6 +371,8 @@ struct UsageEditor: View {
     @State private var week: Double
     @State private var fiveReset: Date
     @State private var weekReset: Date
+    @State private var showPrimary: Bool
+    @State private var showSecondary: Bool
     @State private var hasFiveReset: Bool
     @State private var hasWeekReset: Bool
 
@@ -342,6 +383,8 @@ struct UsageEditor: View {
         _week = State(initialValue: value.weekUsed ?? 0)
         _fiveReset = State(initialValue: value.fiveReset ?? Date().addingTimeInterval(5 * 3600))
         _weekReset = State(initialValue: value.weekReset ?? Date().addingTimeInterval(7 * 86400))
+        _showPrimary = State(initialValue: value.fiveUsed != nil)
+        _showSecondary = State(initialValue: value.weekUsed != nil)
         _hasFiveReset = State(initialValue: value.fiveReset != nil)
         _hasWeekReset = State(initialValue: value.weekReset != nil)
     }
@@ -353,44 +396,54 @@ struct UsageEditor: View {
             Text("填入官方用量面板显示的已用百分比。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            HStack {
-                Text("五小时已用")
-                Spacer()
-                TextField("0–100", value: $five, format: .number.precision(.fractionLength(0)))
-                    .frame(width: 65)
-                    .multilineTextAlignment(.trailing)
-                Text("%")
+            Toggle(windowTitle(store.snapshot.primaryDurationMins, fallback: "主要额度"), isOn: $showPrimary)
+            if showPrimary {
+                HStack {
+                    Text("已用")
+                    Spacer()
+                    TextField("0–100", value: $five, format: .number.precision(.fractionLength(0)))
+                        .frame(width: 65)
+                        .multilineTextAlignment(.trailing)
+                    Text("%")
+                }
+                Toggle("设置重置时间", isOn: $hasFiveReset)
+                if hasFiveReset {
+                    DatePicker("", selection: $fiveReset, displayedComponents: [.date, .hourAndMinute])
+                        .labelsHidden()
+                }
             }
-            HStack {
-                Text("每周已用")
-                Spacer()
-                TextField("0–100", value: $week, format: .number.precision(.fractionLength(0)))
-                    .frame(width: 65)
-                    .multilineTextAlignment(.trailing)
-                Text("%")
-            }
-            Toggle("五小时重置时间", isOn: $hasFiveReset)
-            if hasFiveReset {
-                DatePicker("", selection: $fiveReset, displayedComponents: [.date, .hourAndMinute])
-                    .labelsHidden()
-            }
-            Toggle("每周重置时间", isOn: $hasWeekReset)
-            if hasWeekReset {
-                DatePicker("", selection: $weekReset, displayedComponents: [.date, .hourAndMinute])
-                    .labelsHidden()
+            Toggle(windowTitle(store.snapshot.secondaryDurationMins, fallback: "附加额度"), isOn: $showSecondary)
+            if showSecondary {
+                HStack {
+                    Text("已用")
+                    Spacer()
+                    TextField("0–100", value: $week, format: .number.precision(.fractionLength(0)))
+                        .frame(width: 65)
+                        .multilineTextAlignment(.trailing)
+                    Text("%")
+                }
+                Toggle("设置重置时间", isOn: $hasWeekReset)
+                if hasWeekReset {
+                    DatePicker("", selection: $weekReset, displayedComponents: [.date, .hourAndMinute])
+                        .labelsHidden()
+                }
             }
             HStack {
                 Spacer()
                 Button("取消") { dismiss() }
                 Button("保存") {
-                    store.save(UsageSnapshot(fiveUsed: five, weekUsed: week,
-                                             fiveReset: hasFiveReset ? fiveReset : nil,
-                                             weekReset: hasWeekReset ? weekReset : nil,
+                    store.save(UsageSnapshot(fiveUsed: showPrimary ? five : nil,
+                                             weekUsed: showSecondary ? week : nil,
+                                             fiveReset: showPrimary && hasFiveReset ? fiveReset : nil,
+                                             weekReset: showSecondary && hasWeekReset ? weekReset : nil,
+                                             primaryDurationMins: showPrimary ? store.snapshot.primaryDurationMins : nil,
+                                             secondaryDurationMins: showSecondary ? store.snapshot.secondaryDurationMins : nil,
                                              updatedAt: Date(), source: "手动更新"))
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(!(0...100).contains(five) || !(0...100).contains(week))
+                .disabled((showPrimary && !(0...100).contains(five)) ||
+                          (showSecondary && !(0...100).contains(week)))
             }
         }
         .padding(22)
@@ -581,7 +634,9 @@ final class AppController: NSObject, NSApplicationDelegate {
 }
 
 func runUpdateCommand(_ args: [String]) -> Int32 {
-    guard args.contains("--five") || args.contains("--week") else { return 2 }
+    guard args.contains("--primary") || args.contains("--secondary") ||
+          args.contains("--five") || args.contains("--week") ||
+          args.contains("--clear-primary") || args.contains("--clear-secondary") else { return 2 }
     let folder = dataFolder()
     let fileURL = folder.appendingPathComponent("usage.json")
     try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -589,20 +644,34 @@ func runUpdateCommand(_ args: [String]) -> Int32 {
     var index = 0
     while index < args.count {
         let key = args[index]
+        if key == "--clear-primary" {
+            value.fiveUsed = nil
+            value.fiveReset = nil
+            value.primaryDurationMins = nil
+            index += 1
+            continue
+        }
+        if key == "--clear-secondary" {
+            value.weekUsed = nil
+            value.weekReset = nil
+            value.secondaryDurationMins = nil
+            index += 1
+            continue
+        }
         guard index + 1 < args.count else { fputs("Missing value for \(key)\n", stderr); return 2 }
         let raw = args[index + 1]
         switch key {
-        case "--five":
-            guard let number = Double(raw), (0...100).contains(number) else { fputs("--five must be 0–100\n", stderr); return 2 }
+        case "--primary", "--five":
+            guard let number = Double(raw), (0...100).contains(number) else { fputs("Primary usage must be 0–100\n", stderr); return 2 }
             value.fiveUsed = number
-        case "--week":
-            guard let number = Double(raw), (0...100).contains(number) else { fputs("--week must be 0–100\n", stderr); return 2 }
+        case "--secondary", "--week":
+            guard let number = Double(raw), (0...100).contains(number) else { fputs("Secondary usage must be 0–100\n", stderr); return 2 }
             value.weekUsed = number
-        case "--five-reset":
-            guard let time = TimeInterval(raw) else { fputs("--five-reset must be a Unix timestamp\n", stderr); return 2 }
+        case "--primary-reset", "--five-reset":
+            guard let time = TimeInterval(raw) else { fputs("Primary reset must be a Unix timestamp\n", stderr); return 2 }
             value.fiveReset = Date(timeIntervalSince1970: time)
-        case "--week-reset":
-            guard let time = TimeInterval(raw) else { fputs("--week-reset must be a Unix timestamp\n", stderr); return 2 }
+        case "--secondary-reset", "--week-reset":
+            guard let time = TimeInterval(raw) else { fputs("Secondary reset must be a Unix timestamp\n", stderr); return 2 }
             value.weekReset = Date(timeIntervalSince1970: time)
         default:
             fputs("Unknown option: \(key)\n", stderr)
@@ -632,7 +701,7 @@ func runRefreshCommand() -> Int32 {
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try JSONEncoder().encode(value).write(to: folder.appendingPathComponent("usage.json"), options: .atomic)
-            print("Usage refreshed: five-hour \(percentText(value.fiveUsed)), weekly \(percentText(value.weekUsed))")
+            print("Usage refreshed: primary \(percentText(value.fiveUsed)), secondary \(percentText(value.weekUsed))")
             return 0
         } catch {
             fputs("Could not save usage: \(error)\n", stderr)
