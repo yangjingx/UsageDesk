@@ -250,34 +250,6 @@ struct MeterRow: View {
     }
 }
 
-final class NativeDragHandle: NSView {
-    override var intrinsicContentSize: NSSize { NSSize(width: 64, height: 27) }
-
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-
-    override func mouseDown(with event: NSEvent) {
-        window?.performDrag(with: event)
-        window?.saveFrame(usingName: "UsageDeskWindow")
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        NSColor.white.withAlphaComponent(0.09).setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: 14, yRadius: 14).fill()
-        let label = NSAttributedString(string: "☷ 拖动", attributes: [
-            .font: NSFont.systemFont(ofSize: 10, weight: .medium),
-            .foregroundColor: NSColor.white.withAlphaComponent(0.72)
-        ])
-        let size = label.size()
-        label.draw(at: NSPoint(x: (bounds.width - size.width) / 2,
-                               y: (bounds.height - size.height) / 2))
-    }
-}
-
-struct DragHandle: NSViewRepresentable {
-    func makeNSView(context: Context) -> NativeDragHandle { NativeDragHandle() }
-    func updateNSView(_ nsView: NativeDragHandle, context: Context) {}
-}
-
 struct WidgetCard: View {
     @ObservedObject var store: UsageStore
     let onRefresh: () -> Void
@@ -300,9 +272,6 @@ struct WidgetCard: View {
                         .foregroundStyle(.white.opacity(0.57))
                 }
                 Spacer()
-                DragHandle()
-                    .frame(width: 64, height: 27)
-                    .help("按住这里拖动卡片")
                 Button(action: onRefresh) {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 14))
@@ -456,6 +425,10 @@ final class CardWindow: NSWindow {
     override var canBecomeMain: Bool { true }
 }
 
+final class DraggableHostingView<Content: View>: NSHostingView<Content> {
+    override var mouseDownCanMoveWindow: Bool { true }
+}
+
 @MainActor
 final class AppController: NSObject, NSApplicationDelegate {
     private let store = UsageStore()
@@ -473,13 +446,13 @@ final class AppController: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         window = CardWindow(contentRect: NSRect(x: 0, y: 0, width: 330, height: 268),
                             styleMask: [.borderless], backing: .buffered, defer: false)
-        window.contentView = NSHostingView(rootView: WidgetCard(store: store, onRefresh: { [weak self] in
+        window.contentView = DraggableHostingView(rootView: WidgetCard(store: store, onRefresh: { [weak self] in
             self?.refreshUsage()
         }))
         window.backgroundColor = .clear
         window.isOpaque = false
         window.hasShadow = true
-        window.isMovableByWindowBackground = false
+        window.isMovableByWindowBackground = true
         window.level = keepOnTop ? .floating : .normal
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.setFrameAutosaveName("UsageDeskWindow")

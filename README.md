@@ -4,7 +4,7 @@
 
 ![UsageDesk 桌面卡片 / desktop card](assets/usage-card.png)
 
-*截图展示双窗口账户；其他套餐可能只显示一个窗口。 / The screenshot shows an account with two quota windows; other plans may show one.*
+*截图摄于早期版本，展示双窗口账户；当前版本已移除顶部拖动按钮。其他套餐可能只显示一个窗口。 / This screenshot is from an earlier version and shows two quota windows; the current version has no drag handle. Other plans may show one window.*
 
 ## 中文
 
@@ -13,7 +13,7 @@ UsageDesk 是一款可拖动、可置顶的 macOS 桌面卡片，显示当前 Co
 ### 安装与使用
 
 1. 下载并解压 [UsageDesk.zip](UsageDesk.zip)，将 `UsageDesk.app` 放入“应用程序”文件夹。适用于 Apple 芯片 Mac，最低系统版本为 macOS 15。
-2. 打开应用。按住卡片顶部的“拖动”把手移动；位置会被记住。
+2. 打开应用。按住卡片任意空白处拖动；位置会被记住。
 3. 在菜单栏点击柱状图图标，可显示或隐藏卡片、立即刷新、调整刷新间隔、切换始终置顶，或退出应用。
 
 首次启动时**不预置任何用量数字**。应用会调用这台 Mac 上已登录的 `codex app-server`，通过只读的 `account/rateLimits/read` 方法获取当前账户的用量。读取成功后，卡片只显示实际返回的窗口；没有返回的窗口不会显示。若本机没有可用的 Codex 登录状态，可在卡片中手动输入，或使用快捷指令同步。
@@ -41,7 +41,7 @@ UsageDesk is a movable, always-on-top macOS desktop card for your current Codex 
 ### Install and use
 
 1. Download and unzip [UsageDesk.zip](UsageDesk.zip), then move `UsageDesk.app` to Applications. It requires an Apple silicon Mac running macOS 15 or later.
-2. Open the app. Drag the handle at the top of the card to move it; the position is saved.
+2. Open the app. Drag any empty area of the card to move it; the position is saved.
 3. Use the bar-chart icon in the menu bar to show or hide the card, refresh now, change the refresh interval, toggle always-on-top, or quit.
 
 A fresh installation shows **no preloaded usage figures**. UsageDesk starts the locally installed, signed-in `codex app-server` and reads `account/rateLimits/read`. After a successful read, the card shows only the windows returned for that account. Missing windows are hidden. If Codex is unavailable or not signed in, you can enter the percentages manually or sync them with Shortcuts.
