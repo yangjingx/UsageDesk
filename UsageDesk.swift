@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Darwin
 import SwiftUI
 
@@ -8,8 +9,15 @@ private func dataFolder() -> URL {
     if let override = ProcessInfo.processInfo.environment["USAGEDESK_DATA_DIR"], !override.isEmpty {
         return URL(fileURLWithPath: override, isDirectory: true)
     }
+    #if USAGEDESK_TEST
+    return URL(fileURLWithPath: "/private/tmp/UsageDeskPreviewData", isDirectory: true)
+    #elseif USAGEDESK_PREVIEW
+    return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("UsageDeskPreview", isDirectory: true)
+    #else
     return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("UsageDesk", isDirectory: true)
+    #endif
 }
 
 struct UsageSnapshot: Codable, Sendable {
@@ -71,7 +79,8 @@ enum FetchResult: Sendable {
 enum UsageFetcher {
     private static func codexURL() -> URL? {
         #if USAGEDESK_TEST
-        if let path = ProcessInfo.processInfo.environment["USAGEDESK_TEST_CODEX"] {
+        if let path = ProcessInfo.processInfo.environment["USAGEDESK_TEST_CODEX"]
+            ?? (Bundle.main.object(forInfoDictionaryKey: "UsageDeskTestCodexPath") as? String) {
             return URL(fileURLWithPath: path)
         }
         #endif
@@ -180,29 +189,34 @@ private func percentText(_ value: Double?) -> String {
     return "\(Int(value.rounded()))%"
 }
 
-private func windowTitle(_ minutes: Int?, fallback: String) -> String {
+private func localized(_ language: AppLanguage, _ chinese: String, _ english: String) -> String {
+    language == .chinese ? chinese : english
+}
+
+private func windowTitle(_ minutes: Int?, fallback: String, language: AppLanguage) -> String {
     guard let minutes, minutes > 0 else { return fallback }
-    if minutes == 10_080 { return "每周" }
-    if minutes % 10_080 == 0 { return "\(minutes / 10_080) 周" }
-    if minutes % 1_440 == 0 { return "\(minutes / 1_440) 天" }
-    if minutes % 60 == 0 { return "\(minutes / 60) 小时" }
-    return "\(minutes) 分钟"
+    if minutes == 10_080 { return localized(language, "每周", "Weekly") }
+    if minutes % 10_080 == 0 { return localized(language, "\(minutes / 10_080) 周", "\(minutes / 10_080) weeks") }
+    if minutes % 1_440 == 0 { return localized(language, "\(minutes / 1_440) 天", "\(minutes / 1_440) days") }
+    if minutes % 60 == 0 { return localized(language, "\(minutes / 60) 小时", "\(minutes / 60) hours") }
+    return localized(language, "\(minutes) 分钟", "\(minutes) minutes")
 }
 
-private func resetText(_ date: Date?) -> String {
-    guard let date else { return "重置时间未填" }
+private func resetText(_ date: Date?, language: AppLanguage) -> String {
+    guard let date else { return localized(language, "重置时间未填", "Reset time unknown") }
     let format = DateFormatter()
-    format.locale = Locale(identifier: "zh_CN")
-    format.dateFormat = "M月d日 HH:mm 重置"
-    return format.string(from: date)
+    format.locale = Locale(identifier: language == .chinese ? "zh_CN" : "en_US")
+    format.dateFormat = language == .chinese ? "M月d日 HH:mm" : "MMM d, HH:mm"
+    return localized(language, "\(format.string(from: date)) 重置", "Resets \(format.string(from: date))")
 }
 
-private func updatedText(_ date: Date?) -> String {
-    guard let date else { return "尚未录入" }
+private func updatedText(_ date: Date?, language: AppLanguage) -> String {
+    guard let date else { return localized(language, "尚未录入", "No data yet") }
     let format = DateFormatter()
-    format.locale = Locale(identifier: "zh_CN")
-    format.dateFormat = Calendar.current.isDateInToday(date) ? "HH:mm:ss" : "M月d日 HH:mm:ss"
-    return "\(format.string(from: date)) 更新"
+    format.locale = Locale(identifier: language == .chinese ? "zh_CN" : "en_US")
+    format.dateFormat = Calendar.current.isDateInToday(date) ? "HH:mm:ss" :
+        (language == .chinese ? "M月d日 HH:mm:ss" : "MMM d, HH:mm:ss")
+    return localized(language, "\(format.string(from: date)) 更新", "Updated \(format.string(from: date))")
 }
 
 struct MeterRow: View {
@@ -211,6 +225,7 @@ struct MeterRow: View {
     let used: Double?
     let reset: Date?
     let tint: Color
+    let language: AppLanguage
 
     private var remaining: Double? { used.map { max(0, 100 - $0) } }
 
@@ -222,7 +237,7 @@ struct MeterRow: View {
                     .foregroundStyle(.white)
                 Spacer()
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text("剩余")
+                    Text(localized(language, "剩余", "Left"))
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(.white.opacity(0.65))
                     Text(percentText(remaining))
@@ -240,9 +255,10 @@ struct MeterRow: View {
             }
             .frame(height: 8)
             HStack {
-                Text(used == nil ? "等待用量数据" : "已用 \(percentText(used))")
+                Text(used == nil ? localized(language, "等待用量数据", "Waiting for usage") :
+                     localized(language, "已用 \(percentText(used))", "Used \(percentText(used))"))
                 Spacer()
-                Text(resetText(reset))
+                Text(resetText(reset, language: language))
             }
             .font(.system(size: 11))
             .foregroundStyle(.white.opacity(0.65))
@@ -252,22 +268,17 @@ struct MeterRow: View {
 
 struct WidgetCard: View {
     @ObservedObject var store: UsageStore
+    @ObservedObject var preferences: AppPreferences
     let onRefresh: () -> Void
     @State private var showEditor = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 19) {
             HStack(spacing: 10) {
-                Image(systemName: "chart.bar.fill")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(Color(red: 0.53, green: 0.94, blue: 0.83))
-                    .frame(width: 31, height: 31)
-                    .background(.white.opacity(0.11), in: RoundedRectangle(cornerRadius: 9))
+                BrandLogo(name: "codex-mark", fallback: "chart.bar.fill")
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Codex 用量")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(.white)
-                    Text(updatedText(store.snapshot.updatedAt))
+                    ProviderTitle(provider: .codex, preferences: preferences)
+                    Text(updatedText(store.snapshot.updatedAt, language: preferences.language))
                         .font(.system(size: 10))
                         .foregroundStyle(.white.opacity(0.57))
                 }
@@ -277,43 +288,60 @@ struct WidgetCard: View {
                         .font(.system(size: 14))
                 }
                 .buttonStyle(.plain)
+                .frame(width: 27, height: 30)
+                .background(InteractiveRegion(id: "codex.refresh"))
                 .foregroundStyle(.white.opacity(0.8))
                 .disabled(store.isRefreshing)
-                .help("立即刷新用量")
+                .help(localized(preferences.language, "立即刷新用量", "Refresh usage now"))
                 Button { showEditor = true } label: {
-                    Image(systemName: "square.and.pencil")
+                    Image(systemName: "gearshape")
                         .font(.system(size: 14))
                 }
                 .buttonStyle(.plain)
+                .frame(width: 27, height: 30)
+                .background(InteractiveRegion(id: "codex.edit"))
                 .foregroundStyle(.white.opacity(0.8))
-                .help("更新用量")
+                .help(localized(preferences.language, "Codex 设置与手动更新", "Codex settings and manual update"))
             }
 
             if let used = store.snapshot.fiveUsed {
-                MeterRow(title: windowTitle(store.snapshot.primaryDurationMins, fallback: "主要额度"),
+                MeterRow(title: windowTitle(store.snapshot.primaryDurationMins,
+                                            fallback: localized(preferences.language, "主要额度", "Primary limit"),
+                                            language: preferences.language),
                          symbol: "clock", used: used, reset: store.snapshot.fiveReset,
-                         tint: Color(red: 0.41, green: 0.91, blue: 0.77))
+                         tint: Color(red: 0.41, green: 0.91, blue: 0.77), language: preferences.language)
             }
             if let used = store.snapshot.weekUsed {
-                MeterRow(title: windowTitle(store.snapshot.secondaryDurationMins, fallback: "附加额度"),
+                MeterRow(title: windowTitle(store.snapshot.secondaryDurationMins,
+                                            fallback: localized(preferences.language, "附加额度", "Secondary limit"),
+                                            language: preferences.language),
                          symbol: "clock", used: used, reset: store.snapshot.weekReset,
-                         tint: Color(red: 0.59, green: 0.70, blue: 1.0))
+                         tint: Color(red: 0.59, green: 0.70, blue: 1.0), language: preferences.language)
             }
             if store.snapshot.fiveUsed == nil && store.snapshot.weekUsed == nil {
-                Text(store.isRefreshing ? "正在读取本机额度…" : "当前账户没有可显示的用量窗口")
+                Text(store.isRefreshing ?
+                     localized(preferences.language, "正在读取本机额度…", "Reading local limits…") :
+                     localized(preferences.language, "当前账户没有可显示的用量窗口", "No usage windows for this account"))
                     .font(.system(size: 12))
                     .foregroundStyle(.white.opacity(0.7))
                     .frame(maxWidth: .infinity, minHeight: 95)
             }
 
             HStack {
-                Text(store.isRefreshing ? "正在同步…" : (store.lastError == nil ?
-                     (store.snapshot.source ?? "用量快照") : "同步失败 · 显示上次数据"))
+                Text(store.isRefreshing ? localized(preferences.language, "正在同步…", "Syncing…") :
+                     (store.lastError == nil ?
+                      (store.snapshot.source == "手动更新" ? localized(preferences.language, "手动更新", "Manual update") :
+                       store.snapshot.source == "快捷指令更新" ? localized(preferences.language, "快捷指令更新", "Shortcut update") :
+                       localized(preferences.language, "自动同步", "Auto sync")) :
+                      localized(preferences.language, "同步失败 · 显示上次数据", "Sync failed · showing last data")))
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.white.opacity(0.44))
                 Spacer()
-                Button("打开官方面板 ↗") { NSWorkspace.shared.open(dashboardURL) }
+                Button(localized(preferences.language, "打开官方面板 ↗", "Open dashboard ↗")) {
+                    NSWorkspace.shared.open(dashboardURL)
+                }
                     .buttonStyle(.plain)
+                    .background(InteractiveRegion(id: "codex.dashboard"))
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(Color(red: 0.61, green: 0.93, blue: 0.84))
             }
@@ -329,12 +357,13 @@ struct WidgetCard: View {
                     RoundedRectangle(cornerRadius: 23).stroke(.white.opacity(0.15), lineWidth: 1)
                 }
         }
-        .sheet(isPresented: $showEditor) { UsageEditor(store: store) }
+        .sheet(isPresented: $showEditor) { UsageEditor(store: store, preferences: preferences) }
     }
 }
 
 struct UsageEditor: View {
     @ObservedObject var store: UsageStore
+    @ObservedObject var preferences: AppPreferences
     @Environment(\.dismiss) private var dismiss
     @State private var five: Double
     @State private var week: Double
@@ -345,8 +374,9 @@ struct UsageEditor: View {
     @State private var hasFiveReset: Bool
     @State private var hasWeekReset: Bool
 
-    init(store: UsageStore) {
+    init(store: UsageStore, preferences: AppPreferences) {
         self.store = store
+        self.preferences = preferences
         let value = store.snapshot
         _five = State(initialValue: value.fiveUsed ?? 0)
         _week = State(initialValue: value.weekUsed ?? 0)
@@ -360,38 +390,43 @@ struct UsageEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("更新用量")
+            Text(localized(preferences.language, "更新用量", "Edit usage"))
                 .font(.title3.bold())
-            Text("填入官方用量面板显示的已用百分比。")
+            Text(localized(preferences.language, "填入官方用量面板显示的已用百分比。",
+                           "Enter the used percentages shown on the official dashboard."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Toggle(windowTitle(store.snapshot.primaryDurationMins, fallback: "主要额度"), isOn: $showPrimary)
+            Toggle(windowTitle(store.snapshot.primaryDurationMins,
+                               fallback: localized(preferences.language, "主要额度", "Primary limit"),
+                               language: preferences.language), isOn: $showPrimary)
             if showPrimary {
                 HStack {
-                    Text("已用")
+                    Text(localized(preferences.language, "已用", "Used"))
                     Spacer()
                     TextField("0–100", value: $five, format: .number.precision(.fractionLength(0)))
                         .frame(width: 65)
                         .multilineTextAlignment(.trailing)
                     Text("%")
                 }
-                Toggle("设置重置时间", isOn: $hasFiveReset)
+                Toggle(localized(preferences.language, "设置重置时间", "Set reset time"), isOn: $hasFiveReset)
                 if hasFiveReset {
                     DatePicker("", selection: $fiveReset, displayedComponents: [.date, .hourAndMinute])
                         .labelsHidden()
                 }
             }
-            Toggle(windowTitle(store.snapshot.secondaryDurationMins, fallback: "附加额度"), isOn: $showSecondary)
+            Toggle(windowTitle(store.snapshot.secondaryDurationMins,
+                               fallback: localized(preferences.language, "附加额度", "Secondary limit"),
+                               language: preferences.language), isOn: $showSecondary)
             if showSecondary {
                 HStack {
-                    Text("已用")
+                    Text(localized(preferences.language, "已用", "Used"))
                     Spacer()
                     TextField("0–100", value: $week, format: .number.precision(.fractionLength(0)))
                         .frame(width: 65)
                         .multilineTextAlignment(.trailing)
                     Text("%")
                 }
-                Toggle("设置重置时间", isOn: $hasWeekReset)
+                Toggle(localized(preferences.language, "设置重置时间", "Set reset time"), isOn: $hasWeekReset)
                 if hasWeekReset {
                     DatePicker("", selection: $weekReset, displayedComponents: [.date, .hourAndMinute])
                         .labelsHidden()
@@ -399,8 +434,8 @@ struct UsageEditor: View {
             }
             HStack {
                 Spacer()
-                Button("取消") { dismiss() }
-                Button("保存") {
+                Button(localized(preferences.language, "取消", "Cancel")) { dismiss() }
+                Button(localized(preferences.language, "保存", "Save")) {
                     store.save(UsageSnapshot(fiveUsed: showPrimary ? five : nil,
                                              weekUsed: showSecondary ? week : nil,
                                              fiveReset: showPrimary && hasFiveReset ? fiveReset : nil,
@@ -420,19 +455,392 @@ struct UsageEditor: View {
     }
 }
 
+private func money(_ value: Decimal, currency: String) -> String {
+    let number = NSDecimalNumber(decimal: value)
+    let format = NumberFormatter()
+    format.numberStyle = .currency
+    format.currencyCode = currency
+    format.maximumFractionDigits = 2
+    format.minimumFractionDigits = 2
+    return format.string(from: number) ?? "\(currency) \(number)"
+}
+
+struct BrandLogo: View {
+    let name: String
+    let fallback: String
+
+    var body: some View {
+        Group {
+            if let url = Bundle.main.url(forResource: name, withExtension: "png"),
+               let image = NSImage(contentsOf: url) {
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .padding(4)
+            } else {
+                Image(systemName: fallback)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+        }
+        .frame(width: 34, height: 34)
+        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 9))
+        .accessibilityLabel(name == "codex-mark" ? "Codex" : "DeepSeek")
+    }
+}
+
+struct ProviderTitle: View {
+    let provider: ProviderID
+    @ObservedObject var preferences: AppPreferences
+    @State private var showChooser = false
+
+    private var title: String {
+        provider == .codex ? localized(preferences.language, "Codex 用量", "Codex usage") : "DeepSeek API"
+    }
+
+    var body: some View {
+        if preferences.layout == .switchCards {
+            Button { showChooser = true } label: {
+                HStack(spacing: 5) {
+                    Text(title)
+                        .font(.system(size: 15, weight: .bold))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.7))
+                }
+                .foregroundStyle(.white)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .background(InteractiveRegion(id: "provider.title.\(provider.rawValue)"))
+            .help(localized(preferences.language, "点击选择卡片", "Choose a card"))
+            .popover(isPresented: $showChooser, arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(ProviderID.allCases, id: \.self) { choice in
+                        Button {
+                            preferences.selectedProvider = choice
+                            showChooser = false
+                        } label: {
+                            HStack {
+                                Text(choice == .codex ? "Codex" : "DeepSeek")
+                                Spacer()
+                                if preferences.selectedProvider == choice {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                            .frame(width: 130)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(8)
+                    }
+                }
+                .padding(5)
+                .background(Color(red: 0.12, green: 0.16, blue: 0.25), in: RoundedRectangle(cornerRadius: 12))
+            }
+        } else {
+            Text(title)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(.white)
+        }
+    }
+}
+
+struct DeepSeekCard: View {
+    @ObservedObject var store: DeepSeekStore
+    @ObservedObject var preferences: AppPreferences
+    let onRefresh: () -> Void
+    let onSettings: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            HStack(spacing: 10) {
+                BrandLogo(name: "deepseek-mark", fallback: "water.waves")
+                VStack(alignment: .leading, spacing: 2) {
+                    ProviderTitle(provider: .deepSeek, preferences: preferences)
+                    Text(updatedText(store.snapshot?.updatedAt, language: preferences.language))
+                        .font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(0.57))
+                }
+                Spacer()
+                Button(action: onRefresh) { Image(systemName: "arrow.clockwise") }
+                    .buttonStyle(.plain)
+                    .frame(width: 27, height: 30)
+                    .background(InteractiveRegion(id: "deepseek.refresh"))
+                    .disabled(!store.hasCredential || store.isRefreshing)
+                    .help(localized(preferences.language, "刷新余额", "Refresh balance"))
+                Button(action: onSettings) { Image(systemName: "gearshape") }
+                    .buttonStyle(.plain)
+                    .frame(width: 27, height: 30)
+                    .background(InteractiveRegion(id: "deepseek.settings"))
+                    .help(localized(preferences.language, "DeepSeek 设置", "DeepSeek settings"))
+            }
+
+            if !store.hasCredential {
+                Spacer(minLength: 10)
+                Button(localized(preferences.language, "连接 DeepSeek API", "Connect DeepSeek API"), action: onSettings)
+                    .buttonStyle(.borderedProminent)
+                    .background(InteractiveRegion(id: "deepseek.connect"))
+                Text(localized(preferences.language, "输入你自己的 API Key 后显示账户余额。",
+                               "Enter your own API key to see your account balance."))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.65))
+                Spacer(minLength: 10)
+            } else if let snapshot = store.snapshot {
+                ForEach(snapshot.balances, id: \.currency) { balance in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(localized(preferences.language, "可用余额", "Available balance"))
+                                .font(.system(size: 11))
+                                .foregroundStyle(.white.opacity(0.65))
+                            Spacer()
+                            Text(money(balance.total, currency: balance.currency))
+                                .font(.system(size: 23, weight: .bold, design: .rounded))
+                                .monospacedDigit()
+                        }
+                        Text(localized(preferences.language,
+                                       "赠金 \(money(balance.granted, currency: balance.currency)) · 充值 \(money(balance.toppedUp, currency: balance.currency))",
+                                       "Granted \(money(balance.granted, currency: balance.currency)) · Paid \(money(balance.toppedUp, currency: balance.currency))"))
+                            .font(.system(size: 10))
+                            .foregroundStyle(.white.opacity(0.6))
+                    }
+                }
+                if snapshot.balances.isEmpty {
+                    Text(localized(preferences.language, "账户没有返回余额条目", "No balance entries returned"))
+                        .font(.system(size: 12))
+                }
+                Spacer(minLength: 0)
+                Text(snapshot.isAvailable ? localized(preferences.language, "可用于 API 调用", "Available for API calls") :
+                     localized(preferences.language, "余额不可用于 API 调用", "Unavailable for API calls"))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(snapshot.isAvailable ? Color(red: 0.61, green: 0.93, blue: 0.84) : .orange)
+            } else {
+                Spacer(minLength: 10)
+                Text(store.isRefreshing ? localized(preferences.language, "正在读取余额…", "Reading balance…") :
+                     localized(preferences.language, "等待余额数据", "Waiting for balance data"))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.7))
+                Spacer(minLength: 10)
+            }
+
+            HStack {
+                Text(store.lastError == nil ?
+                     (store.isRefreshing ? localized(preferences.language, "正在同步…", "Syncing…") :
+                      localized(preferences.language, "API 余额", "API balance")) :
+                     localized(preferences.language, "同步失败 · 显示上次数据", "Sync failed · showing last data"))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white.opacity(0.5))
+                Spacer()
+                Button(localized(preferences.language, "打开 DeepSeek ↗", "Open DeepSeek ↗")) {
+                    NSWorkspace.shared.open(URL(string: "https://platform.deepseek.com")!)
+                }
+                .buttonStyle(.plain)
+                .background(InteractiveRegion(id: "deepseek.dashboard"))
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(Color(red: 0.68, green: 0.80, blue: 1))
+            }
+        }
+        .foregroundStyle(.white)
+        .padding(21)
+        .frame(width: 330, height: 268)
+        .background {
+            RoundedRectangle(cornerRadius: 23)
+                .fill(LinearGradient(colors: [Color(red: 0.11, green: 0.15, blue: 0.25),
+                                              Color(red: 0.07, green: 0.09, blue: 0.16)],
+                                     startPoint: .topLeading, endPoint: .bottomTrailing))
+                .overlay { RoundedRectangle(cornerRadius: 23).stroke(.white.opacity(0.15), lineWidth: 1) }
+        }
+    }
+}
+
+struct UsageDeskSettings: View {
+    @ObservedObject var preferences: AppPreferences
+    @ObservedObject var deepSeek: DeepSeekStore
+    let onCredentialChanged: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage("deepSeekRefreshInterval") private var deepSeekInterval = 60.0
+    @State private var enteredKey = ""
+    @State private var feedback = ""
+    @State private var testing = false
+    @State private var credentialBusy = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 17) {
+            Text(localized(preferences.language, "DeepSeek API 设置", "DeepSeek API settings"))
+                .font(.title3.bold())
+            Text(deepSeek.hasCredential ?
+                 localized(preferences.language, "已保存 API Key；输入新密钥可以替换。", "API key saved. Enter a new key to replace it.") :
+                 localized(preferences.language, "输入你的 DeepSeek 开放平台 API Key。", "Enter your DeepSeek Open Platform API key."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            SecureField("API Key", text: $enteredKey)
+                .textFieldStyle(.roundedBorder)
+            Picker(localized(preferences.language, "余额刷新间隔", "Balance refresh interval"),
+                   selection: $deepSeekInterval) {
+                Text(localized(preferences.language, "30 秒", "30 seconds")).tag(30.0)
+                Text(localized(preferences.language, "1 分钟", "1 minute")).tag(60.0)
+                Text(localized(preferences.language, "5 分钟", "5 minutes")).tag(300.0)
+                Text(localized(preferences.language, "15 分钟", "15 minutes")).tag(900.0)
+            }
+            HStack {
+                Button(localized(preferences.language, "测试连接", "Test connection")) {
+                    let typedKey = enteredKey
+                    testing = true
+                    Task {
+                        let key: String? = typedKey.isEmpty
+                            ? await Task.detached(priority: .userInitiated) { DeepSeekCredential.read() }.value
+                            : typedKey
+                        guard let key, !key.isEmpty else {
+                            feedback = localized(preferences.language, "没有可用密钥", "No key available")
+                            testing = false
+                            return
+                        }
+                        do {
+                            _ = try await DeepSeekAPI.fetch(key: key)
+                            feedback = localized(preferences.language, "连接成功", "Connection successful")
+                        } catch {
+                            feedback = localized(preferences.language, "连接失败，请检查密钥或网络", "Connection failed; check the key or network")
+                        }
+                        testing = false
+                    }
+                }
+                .disabled(testing || credentialBusy || (enteredKey.isEmpty && !deepSeek.hasCredential))
+                Button(localized(preferences.language, "保存密钥", "Save key")) {
+                    let key = enteredKey
+                    credentialBusy = true
+                    Task {
+                        if await deepSeek.replaceCredential(key) {
+                            enteredKey = ""
+                            feedback = localized(preferences.language, "已保存到系统钥匙串", "Saved to Keychain")
+                            onCredentialChanged()
+                        } else {
+                            feedback = localized(preferences.language, "保存失败", "Could not save key")
+                        }
+                        credentialBusy = false
+                    }
+                }
+                .disabled(credentialBusy || enteredKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button(localized(preferences.language, "删除密钥", "Remove key")) {
+                    credentialBusy = true
+                    Task {
+                        if await deepSeek.removeCredential() {
+                            feedback = localized(preferences.language, "密钥已删除", "Key removed")
+                            onCredentialChanged()
+                        }
+                        credentialBusy = false
+                    }
+                }
+                .disabled(credentialBusy || !deepSeek.hasCredential)
+            }
+            if !feedback.isEmpty { Text(feedback).font(.caption).foregroundStyle(.secondary) }
+            HStack {
+                Spacer()
+                Button(localized(preferences.language, "完成", "Done")) { dismiss() }
+            }
+        }
+        .padding(22)
+        .frame(width: 430)
+    }
+}
+
+struct DesktopCard: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject var codex: UsageStore
+    @ObservedObject var deepSeek: DeepSeekStore
+    @ObservedObject var preferences: AppPreferences
+    let onCodexRefresh: () -> Void
+    let onDeepSeekRefresh: () -> Void
+    let onCredentialChanged: () -> Void
+
+    private var cardAnimation: Animation? {
+        reduceMotion ? nil : .easeInOut(duration: 0.22)
+    }
+
+    var body: some View {
+        ScrollView(.vertical) {
+            VStack(spacing: 10) {
+                if preferences.layout == .vertical {
+                    VStack(spacing: 10) {
+                        WidgetCard(store: codex, preferences: preferences, onRefresh: onCodexRefresh)
+                        DeepSeekCard(store: deepSeek, preferences: preferences,
+                                     onRefresh: onDeepSeekRefresh,
+                                     onSettings: { preferences.showSettings = true })
+                    }
+                    .transition(.opacity)
+                } else {
+                    ZStack(alignment: .top) {
+                        if preferences.selectedProvider == .codex {
+                            WidgetCard(store: codex, preferences: preferences,
+                                       onRefresh: onCodexRefresh)
+                                .transition(.opacity)
+                        } else {
+                            DeepSeekCard(store: deepSeek, preferences: preferences,
+                                         onRefresh: onDeepSeekRefresh,
+                                         onSettings: { preferences.showSettings = true })
+                                .transition(.opacity)
+                        }
+                    }
+                    .transition(.opacity)
+                }
+            }
+            .frame(width: 330)
+            .animation(cardAnimation, value: preferences.layout)
+            .animation(cardAnimation, value: preferences.selectedProvider)
+        }
+        .scrollIndicators(.hidden)
+        .frame(width: 330)
+        .sheet(isPresented: $preferences.showSettings) {
+            UsageDeskSettings(preferences: preferences, deepSeek: deepSeek,
+                              onCredentialChanged: onCredentialChanged)
+        }
+    }
+}
+
+final class InteractiveRegionView: NSView {
+    var regionID = ""
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        (window as? CardWindow)?.interactiveRegions.removeValue(forKey: regionID)
+        super.viewWillMove(toWindow: newWindow)
+    }
+
+    override func layout() {
+        super.layout()
+        publish()
+    }
+
+    func publish() {
+        guard let window = window as? CardWindow else { return }
+        window.interactiveRegions[regionID] = convert(bounds, to: nil).insetBy(dx: -3, dy: -3)
+    }
+}
+
+struct InteractiveRegion: NSViewRepresentable {
+    let id: String
+    func makeNSView(context: Context) -> InteractiveRegionView {
+        let view = InteractiveRegionView()
+        view.regionID = id
+        return view
+    }
+    func updateNSView(_ view: InteractiveRegionView, context: Context) {
+        view.regionID = id
+        view.publish()
+    }
+}
+
 final class CardWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+    override func animationResizeTime(_ newFrame: NSRect) -> TimeInterval { 0.22 }
 
+    var interactiveRegions: [String: NSRect] = [:]
     private var dragAnchor: NSPoint?
 
     override func sendEvent(_ event: NSEvent) {
         switch event.type {
         case .leftMouseDown:
             let point = event.locationInWindow
-            let topButtons = NSRect(x: 245, y: 208, width: 85, height: 60)
-            let dashboardLink = NSRect(x: 210, y: 0, width: 120, height: 48)
-            if !topButtons.contains(point) && !dashboardLink.contains(point) {
+            if !interactiveRegions.values.contains(where: { $0.contains(point) }) {
                 dragAnchor = point
                 return
             }
@@ -459,23 +867,33 @@ final class CardWindow: NSWindow {
 @MainActor
 final class AppController: NSObject, NSApplicationDelegate {
     private let store = UsageStore()
+    private let deepSeek = DeepSeekStore(folder: dataFolder())
+    private let preferences = AppPreferences()
     private var window: CardWindow!
     private var statusItem: NSStatusItem!
     private var pollTimer: Timer?
     private var refreshTimer: Timer?
     private var nextRefreshAt = Date.distantPast
+    private var nextDeepSeekRefreshAt = Date.distantPast
     private var failureCount = 0
+    private var deepSeekFailureCount = 0
     private var pinItem: NSMenuItem!
     private var autoItem: NSMenuItem!
     private var intervalItems: [NSMenuItem] = []
+    private var layoutItems: [NSMenuItem] = []
+    private var languageItems: [NSMenuItem] = []
+    private var menuItems: [String: NSMenuItem] = [:]
+    private var subscriptions = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         window = CardWindow(contentRect: NSRect(x: 0, y: 0, width: 330, height: 268),
                             styleMask: [.borderless], backing: .buffered, defer: false)
-        window.contentView = NSHostingView(rootView: WidgetCard(store: store, onRefresh: { [weak self] in
-            self?.refreshUsage()
-        }))
+        window.contentView = NSHostingView(rootView: DesktopCard(
+            codex: store, deepSeek: deepSeek, preferences: preferences,
+            onCodexRefresh: { [weak self] in self?.refreshUsage() },
+            onDeepSeekRefresh: { [weak self] in self?.refreshDeepSeek() },
+            onCredentialChanged: { [weak self] in self?.credentialChanged() }))
         window.backgroundColor = .clear
         window.isOpaque = false
         window.hasShadow = true
@@ -486,20 +904,54 @@ final class AppController: NSObject, NSApplicationDelegate {
         if !window.setFrameUsingName("UsageDeskWindow") {
             window.center()
         }
+        resizeWindow()
         window.makeKeyAndOrderFront(nil)
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.image = NSImage(systemSymbolName: "chart.bar.fill", accessibilityDescription: "Codex 用量")
+        statusItem.button?.image = NSImage(systemSymbolName: "chart.bar.fill", accessibilityDescription: "UsageDesk")
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "显示 / 隐藏小组件", action: #selector(toggleWindow), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "立即刷新用量", action: #selector(refreshNow), keyEquivalent: ""))
+        let showItem = NSMenuItem(title: "", action: #selector(toggleWindow), keyEquivalent: "")
+        menuItems["show"] = showItem
+        menu.addItem(showItem)
+        let refreshItem = NSMenuItem(title: "", action: #selector(refreshNow), keyEquivalent: "")
+        menuItems["refresh"] = refreshItem
+        menu.addItem(refreshItem)
+        let settingsItem = NSMenuItem(title: "", action: #selector(showSettings), keyEquivalent: "")
+        menuItems["settings"] = settingsItem
+        menu.addItem(settingsItem)
+        let layoutItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        menuItems["layout"] = layoutItem
+        let layoutMenu = NSMenu()
+        for layout in CardLayout.allCases {
+            let item = NSMenuItem(title: "", action: #selector(selectLayout(_:)), keyEquivalent: "")
+            item.representedObject = layout.rawValue
+            item.target = self
+            layoutMenu.addItem(item)
+            layoutItems.append(item)
+        }
+        layoutItem.submenu = layoutMenu
+        menu.addItem(layoutItem)
+        let languageItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        menuItems["language"] = languageItem
+        let languageMenu = NSMenu()
+        for language in AppLanguage.allCases {
+            let item = NSMenuItem(title: "", action: #selector(selectLanguage(_:)), keyEquivalent: "")
+            item.representedObject = language.rawValue
+            item.target = self
+            languageMenu.addItem(item)
+            languageItems.append(item)
+        }
+        languageItem.submenu = languageMenu
+        menu.addItem(languageItem)
         pinItem = NSMenuItem(title: "始终置顶", action: #selector(togglePin), keyEquivalent: "")
         pinItem.state = keepOnTop ? .on : .off
         menu.addItem(pinItem)
         autoItem = NSMenuItem(title: "自动刷新用量", action: #selector(toggleAutoRefresh), keyEquivalent: "")
         autoItem.state = autoRefresh ? .on : .off
         menu.addItem(autoItem)
+        menuItems["auto"] = autoItem
         let intervalItem = NSMenuItem(title: "刷新间隔", action: nil, keyEquivalent: "")
+        menuItems["interval"] = intervalItem
         let intervalMenu = NSMenu()
         for (title, seconds) in [("10 秒", 10.0), ("30 秒", 30.0), ("1 分钟", 60.0), ("5 分钟", 300.0)] {
             let item = NSMenuItem(title: title, action: #selector(selectInterval(_:)), keyEquivalent: "")
@@ -516,22 +968,88 @@ final class AppController: NSObject, NSApplicationDelegate {
         intervalItem.submenu = intervalMenu
         menu.addItem(intervalItem)
         updateIntervalChecks()
-        menu.addItem(NSMenuItem(title: "打开官方用量面板", action: #selector(openDashboard), keyEquivalent: ""))
+        let dashboardItem = NSMenuItem(title: "", action: #selector(openDashboard), keyEquivalent: "")
+        menuItems["dashboard"] = dashboardItem
+        menu.addItem(dashboardItem)
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "退出", action: #selector(quit), keyEquivalent: "q"))
+        let quitItem = NSMenuItem(title: "", action: #selector(quit), keyEquivalent: "q")
+        menuItems["quit"] = quitItem
+        menu.addItem(quitItem)
         menu.items.forEach { $0.target = self }
         statusItem.menu = menu
+        updateMenuText()
+        updateLayoutChecks()
+        updateLanguageChecks()
+
+        preferences.$layout.dropFirst().sink { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.resizeWindow(animated: true)
+                self?.updateLayoutChecks()
+            }
+        }.store(in: &subscriptions)
+        preferences.$selectedProvider.dropFirst().sink { [weak self] _ in
+            DispatchQueue.main.async { self?.resizeWindow(animated: true) }
+        }.store(in: &subscriptions)
+        preferences.$language.dropFirst().sink { [weak self] _ in
+            self?.updateMenuText()
+            self?.updateIntervalChecks()
+            self?.updateLanguageChecks()
+        }.store(in: &subscriptions)
+        deepSeek.$hasCredential.dropFirst().sink { [weak self] available in
+            if available { self?.refreshDeepSeek() }
+        }.store(in: &subscriptions)
 
         pollTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.store.reload() }
         }
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                guard let self, self.autoRefresh, Date() >= self.nextRefreshAt else { return }
-                self.refreshUsage()
+                guard let self, self.autoRefresh else { return }
+                if Date() >= self.nextRefreshAt { self.refreshUsage() }
+                if self.deepSeek.hasCredential && Date() >= self.nextDeepSeekRefreshAt {
+                    self.refreshDeepSeek()
+                }
             }
         }
-        if autoRefresh { refreshUsage() }
+        if autoRefresh {
+            refreshUsage()
+            if deepSeek.hasCredential { refreshDeepSeek() }
+        }
+    }
+
+    private func resizeWindow(animated: Bool = false) {
+        guard let window else { return }
+        let desiredHeight: CGFloat = preferences.layout == .vertical ? 546 : 268
+        let visible = (window.screen ?? NSScreen.main)?.visibleFrame
+        let height = min(desiredHeight, max(260, (visible?.height ?? desiredHeight) - 24))
+        var frame = window.frame
+        frame.size = NSSize(width: 330, height: height)
+        frame.origin.y = window.frame.maxY - height
+        if let visible {
+            frame.origin.x = min(max(frame.origin.x, visible.minX), visible.maxX - frame.width)
+            frame.origin.y = min(max(frame.origin.y, visible.minY), visible.maxY - frame.height)
+        }
+        window.setFrame(frame, display: true,
+                        animate: animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+        window.saveFrame(usingName: "UsageDeskWindow")
+    }
+
+    private func updateMenuText() {
+        let lang = preferences.language
+        menuItems["show"]?.title = localized(lang, "显示 / 隐藏卡片", "Show / hide card")
+        menuItems["refresh"]?.title = localized(lang, "立即刷新", "Refresh now")
+        menuItems["settings"]?.title = localized(lang, "DeepSeek API 设置…", "DeepSeek API settings…")
+        menuItems["layout"]?.title = localized(lang, "卡片布局", "Card layout")
+        layoutItems[0].title = localized(lang, "切换卡片", "Switch cards")
+        layoutItems[1].title = localized(lang, "垂直展开", "Show both vertically")
+        menuItems["language"]?.title = localized(lang, "界面语言", "Language")
+        languageItems[0].title = "中文"
+        languageItems[1].title = "English"
+        pinItem?.title = localized(lang, "始终置顶", "Always on top")
+        menuItems["auto"]?.title = localized(lang, "自动刷新", "Auto refresh")
+        menuItems["interval"]?.title = localized(lang, "Codex 刷新间隔", "Codex refresh interval")
+        menuItems["dashboard"]?.title = localized(lang, "打开 Codex 官方面板", "Open Codex dashboard")
+        menuItems["quit"]?.title = localized(lang, "退出", "Quit")
     }
 
     private var keepOnTop: Bool {
@@ -547,6 +1065,30 @@ final class AppController: NSObject, NSApplicationDelegate {
         return saved == 0 ? 10 : min(max(saved, 10), 3600)
     }
 
+    private func updateLayoutChecks() {
+        for (index, item) in layoutItems.enumerated() {
+            item.state = CardLayout.allCases[index] == preferences.layout ? .on : .off
+        }
+    }
+
+    private func updateLanguageChecks() {
+        for (index, item) in languageItems.enumerated() {
+            item.state = AppLanguage.allCases[index] == preferences.language ? .on : .off
+        }
+    }
+
+    @objc private func selectLayout(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let layout = CardLayout(rawValue: raw) else { return }
+        preferences.layout = layout
+    }
+
+    @objc private func selectLanguage(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let language = AppLanguage(rawValue: raw) else { return }
+        preferences.language = language
+    }
+
     private func updateIntervalChecks() {
         let presets = [10.0, 30.0, 60.0, 300.0]
         for (index, item) in intervalItems.enumerated() {
@@ -555,7 +1097,9 @@ final class AppController: NSObject, NSApplicationDelegate {
                 : (presets.contains(refreshInterval) ? .off : .on)
         }
         intervalItems.last?.title = presets.contains(refreshInterval)
-            ? "自定义…" : "自定义…（\(Int(refreshInterval)) 秒）"
+            ? localized(preferences.language, "自定义…", "Custom…") :
+              localized(preferences.language, "自定义…（\(Int(refreshInterval)) 秒）",
+                        "Custom… (\(Int(refreshInterval)) sec)")
     }
 
     @objc private func selectInterval(_ sender: NSMenuItem) {
@@ -608,7 +1152,60 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func refreshNow() { refreshUsage() }
+    private var deepSeekRefreshInterval: TimeInterval {
+        let saved = UserDefaults.standard.double(forKey: "deepSeekRefreshInterval")
+        return saved == 0 ? 60 : min(max(saved, 30), 3600)
+    }
+
+    private func refreshDeepSeek() {
+        guard deepSeek.hasCredential, !deepSeek.isRefreshing else { return }
+        deepSeek.isRefreshing = true
+        let deepSeek = self.deepSeek
+        Task {
+            let storedKey = await Task.detached(priority: .utility) {
+                DeepSeekCredential.read()
+            }.value
+            guard let key = storedKey else {
+                deepSeek.hasCredential = false
+                deepSeek.isRefreshing = false
+                return
+            }
+            do {
+                let value = try await DeepSeekAPI.fetch(key: key)
+                let currentKey = await Task.detached(priority: .utility) {
+                    DeepSeekCredential.read()
+                }.value
+                guard currentKey == key else {
+                    deepSeek.isRefreshing = false
+                    return
+                }
+                deepSeekFailureCount = 0
+                nextDeepSeekRefreshAt = Date().addingTimeInterval(deepSeekRefreshInterval)
+                deepSeek.save(value)
+            } catch {
+                deepSeekFailureCount += 1
+                let retry = min(600, deepSeekRefreshInterval * Double(1 << min(deepSeekFailureCount, 5)))
+                nextDeepSeekRefreshAt = Date().addingTimeInterval(max(deepSeekRefreshInterval, retry))
+                deepSeek.lastError = String(describing: error)
+            }
+            deepSeek.isRefreshing = false
+        }
+    }
+
+    private func credentialChanged() {
+        nextDeepSeekRefreshAt = .distantPast
+        if deepSeek.hasCredential { refreshDeepSeek() }
+    }
+
+    @objc private func refreshNow() {
+        refreshUsage()
+        refreshDeepSeek()
+    }
+
+    @objc private func showSettings() {
+        preferences.showSettings = true
+        window.makeKeyAndOrderFront(nil)
+    }
 
     @objc private func togglePin() {
         let next = !keepOnTop
@@ -621,7 +1218,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         let next = !autoRefresh
         UserDefaults.standard.set(next, forKey: "autoRefresh")
         autoItem.state = next ? .on : .off
-        if next { refreshUsage() }
+        if next {
+            refreshUsage()
+            refreshDeepSeek()
+        }
     }
 
     @objc private func toggleWindow() {
@@ -708,14 +1308,4 @@ func runRefreshCommand() -> Int32 {
             return 1
         }
     }
-}
-
-let args = Array(CommandLine.arguments.dropFirst())
-if args == ["--refresh"] { exit(runRefreshCommand()) }
-if !args.isEmpty { exit(runUpdateCommand(args)) }
-MainActor.assumeIsolated {
-    let app = NSApplication.shared
-    let delegate = AppController()
-    app.delegate = delegate
-    app.run()
 }
