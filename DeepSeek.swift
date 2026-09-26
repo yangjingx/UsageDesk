@@ -19,7 +19,7 @@ enum DeepSeekCredential {
     #if USAGEDESK_TEST
     private static let service = "com.local.usagedesk.test.deepseek.api-key"
     #elseif USAGEDESK_PREVIEW
-    private static let service = "com.local.usagedesk.preview.deepseek.api-key"
+    private static let service = "com.local.usagedesk.preview020.deepseek.api-key"
     #else
     private static let service = "com.local.usagedesk.deepseek.api-key"
     #endif

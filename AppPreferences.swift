@@ -32,12 +32,14 @@ final class AppPreferences: ObservableObject {
     init() {
         #if USAGEDESK_TEST
         let testLayout = Bundle.main.object(forInfoDictionaryKey: "UsageDeskTestLayout") as? String
+        let testLanguage = Bundle.main.object(forInfoDictionaryKey: "UsageDeskTestLanguage") as? String
         #else
         let testLayout: String? = nil
+        let testLanguage: String? = nil
         #endif
         layout = CardLayout(rawValue: testLayout ?? UserDefaults.standard.string(forKey: "cardLayout") ?? "") ?? .switchCards
         selectedProvider = ProviderID(rawValue: UserDefaults.standard.string(forKey: "selectedProvider") ?? "") ?? .codex
-        language = AppLanguage(rawValue: UserDefaults.standard.string(forKey: "language") ?? "")
+        language = AppLanguage(rawValue: testLanguage ?? UserDefaults.standard.string(forKey: "language") ?? "")
             ?? (Locale.current.language.languageCode?.identifier == "zh" ? .chinese : .english)
     }
 

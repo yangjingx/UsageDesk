@@ -1,87 +1,87 @@
 # UsageDesk · AI 用量桌面卡片 / AI usage desktop card
 
-[中文](#中文) | [English](#english)
+[中文](#中文) · [English](#english) · [v0.2.0 更新日志 / Release notes](docs/releases/v0.2.0.md)
 
-> v0.1.3 adds DeepSeek API balance, two card layouts, and Chinese/English controls. / v0.1.3 新增 DeepSeek API 余额、双卡片布局与中英双语控制。
+<img src="UsageDesk-icon.png" alt="UsageDesk 双环图标 / double-ring icon" width="96">
 
-![UsageDesk v0.1.3 桌面卡片 / desktop cards](assets/usage-card-v013.png)
+UsageDesk 是可拖动、可置顶的 macOS 桌面卡片，显示本机 Codex 账户的额度窗口和 DeepSeek 开放平台的 API 余额。/ UsageDesk is a movable, always-on-top macOS card for local Codex quota windows and DeepSeek Open Platform API balance.
 
-![UsageDesk v0.1.3 切换卡片模式 / switch cards mode](assets/usage-card-switch-v013.png)
+![0.2.0 浅色模式与卡片选择 / Light Mode and card picker](assets/usage-card-v020-light.jpg)
 
-*v0.1.3 垂直展开与切换卡片模式。数字为虚构数据；实际额度窗口由当前账户决定。 / v0.1.3 vertical and switch modes with sample data; actual quota windows depend on the current account.*
+![0.2.0 深色模式双卡片 / Dark Mode with both cards](assets/usage-card-v020-dark-vertical.jpg)
+
+*截图使用虚构的额度与余额；实际窗口、金额和重置时间取决于你的账户。/ Screenshots use fictional quota and balance values; your account determines the actual windows, amounts, and reset times.*
 
 ## 中文
 
-### v0.1.3 功能
+### v0.2.0 更新
 
-v0.1.3 加入 DeepSeek 开放平台 **API 账户余额**、中文/英文切换，以及“切换卡片”或“垂直展开”两种布局。它不统计 DeepSeek 网页聊天用量，也不显示 API Token 消耗。设置中的 DeepSeek API Key 存在本机钥匙串，仅用于请求 DeepSeek 官方余额接口；可随时在设置中删除。Codex 与 DeepSeek 卡片分别采用与深色界面协调的结形和鲸鱼图标。
-
-在菜单栏 UsageDesk 图标中选择卡片布局和语言。选择“切换卡片”后，点击卡片标题旁的倒三角可选择 Codex 或 DeepSeek；选择“垂直展开”则同时显示两张卡片。各卡片右上角的齿轮分别打开 Codex 手动更新和 DeepSeek API 设置。
-
-下载 [`UsageDesk.zip`](UsageDesk.zip)，解压后将 `UsageDesk.app` 放入“应用程序”文件夹。旧版用户可用新版应用替换旧应用；Codex 本地用量数据沿用同一应用目录。
-
-UsageDesk 是一款可拖动、可置顶的 macOS 桌面卡片，显示当前 Codex 账户实际提供的额度窗口、已用比例及重置时间。五小时和每周只是可能出现的窗口，具体以账户返回的数据为准。Codex 默认每 10 秒自动刷新，也可选择 30 秒、1 分钟、5 分钟或自定义 10–3600 秒。DeepSeek 余额默认每 60 秒刷新，设置中可选 30 秒至 15 分钟。
+- 卡片、文字、标题选择菜单和设置界面适配 macOS 浅色与深色外观。支持的系统会在顶部小型操作按钮使用系统玻璃效果；开启“减少透明度”时使用不透明背景，开启“减少动态效果”时减少切换动画。
+- Codex 卡片改为中性色表面与蓝紫色强调，DeepSeek 保留蓝色识别。应用图标改成双环：外环对应 Codex、内环对应 DeepSeek，亮起的弧线表示剩余额度。
+- 修复浅色模式下标题菜单文字对比度不足、DeepSeek 金额与“可用余额”标签不齐的问题；空白区域拖动改用屏幕坐标跟踪，避免窗口跳动和闪烁。
+- 保留标题下拉选择 Codex/DeepSeek、菜单栏中的“切换卡片”与“垂直展开”、中英双语、可设置刷新间隔及始终置顶。完整条目见[双语更新日志](docs/releases/v0.2.0.md)。
 
 ### 安装与使用
 
-1. 下载并解压 [UsageDesk.zip](UsageDesk.zip)，将 `UsageDesk.app` 放入“应用程序”文件夹。适用于 Apple 芯片 Mac，最低系统版本为 macOS 15。
-2. 打开应用。按住卡片任意空白处拖动；位置会被记住。
-3. 在菜单栏点击柱状图图标，可设置卡片布局、界面语言、刷新间隔和始终置顶，也可显示、隐藏或退出应用。
+1. 下载并解压 [UsageDesk.zip](UsageDesk.zip)，将 `UsageDesk.app` 放入“应用程序”文件夹。适用于 Apple 芯片 Mac，最低版本 macOS 15。已安装旧版时，退出旧版后用新应用替换，已有本地设置和用量数据会保留。
+2. 打开应用。按住卡片任意空白区域拖动，位置会自动保存；右上角齿轮打开当前卡片的设置。点击卡片标题和倒三角可选择 Codex 或 DeepSeek。
+3. 在菜单栏点击 UsageDesk 图标，可选择卡片布局、语言、刷新间隔、始终置顶，以及显示、隐藏或退出。选择“垂直展开”可同时看到两张卡片。
 
-使用 DeepSeek 卡片时，点击右上角齿轮，输入自己的 DeepSeek 开放平台 API Key，测试连接后保存。设置中可以调整余额刷新间隔或删除 Key。
+**Codex：**应用调用这台 Mac 上已登录的 `codex app-server`，通过只读的 `account/rateLimits/read` 获取当前账户实际返回的额度窗口、已用比例和重置时间。卡片右侧显示**剩余比例**；五小时与每周只是可能出现的窗口，具体以账户数据为准。Codex 默认每 10 秒自动刷新，也可选 30 秒、1 分钟、5 分钟或自定义 10–3600 秒。
 
-首次启动时**不预置任何用量数字**。应用会调用这台 Mac 上已登录的 `codex app-server`，通过只读的 `account/rateLimits/read` 方法获取当前账户的用量。读取成功后，卡片只显示实际返回的窗口；没有返回的窗口不会显示。若本机没有可用的 Codex 登录状态，可在卡片中手动输入，或使用快捷指令同步。
-
-手动同步命令中的 `--primary`、`--secondary` 对应主、次窗口的**已用百分比**；卡片右侧显示换算后的**剩余百分比**。只传入当前账户实际有的窗口即可：
+若本机 Codex 不可用或未登录，可以通过卡片设置手动录入，或从快捷指令执行下列命令。`--primary`、`--secondary` 输入的是**已用百分比**，只需提供当前账户实际有的窗口：
 
 ```sh
 "$HOME/Applications/UsageDesk.app/Contents/MacOS/UsageDesk" --primary 26 --secondary 47
 ```
 
-旧的 `--five`、`--week` 参数仍可使用，分别作为 `--primary`、`--secondary` 的别名。命令会保留未指定窗口的旧值；如套餐变化，可用 `--clear-primary` 或 `--clear-secondary` 隐藏不适用的窗口。
+旧参数 `--five`、`--week` 仍分别是主、次窗口的别名。未指定的手动窗口保留旧值；套餐变化后可用 `--clear-primary` 或 `--clear-secondary` 隐藏不再适用的窗口。
 
-点击卡片底部“打开官方面板”会在浏览器打开 [Codex 用量页面](https://chatgpt.com/codex/settings/usage)。
+**DeepSeek：**点击 DeepSeek 卡片齿轮，输入自己的开放平台 API Key，测试连接后保存。卡片按币种显示可用余额及赠金、充值构成。默认每 60 秒刷新，可选 30 秒至 15 分钟。此卡片**不统计网页聊天用量，也不显示 API 请求数或 Token 消耗**。
 
 ### 数据与隐私
 
-Codex 部分没有读取、保存或上传 Cookie、`~/.codex/auth.json` 的逻辑。它启动**本机** Codex 子进程，经标准输入和输出请求用量，并把结果保存在当前 macOS 用户的 `~/Library/Application Support/UsageDesk/usage.json`。本机 Codex 为获取账户数据可能与 OpenAI 服务通信。DeepSeek 部分会把你录入的 API Key 保存在 macOS 钥匙串，并且只将该 Key 发往 `https://api.deepseek.com/user/balance` 读取余额；余额快照保存在本地。安装包不包含用户密钥或用量快照。
+Codex 部分不读取、保存或上传 Cookie、`~/.codex/auth.json`。应用通过标准输入和输出与**本机** Codex 子进程通信；Codex 自身可能为获取账户数据连接 OpenAI。用量结果仅存于当前用户的 `~/Library/Application Support/UsageDesk/usage.json`。
 
-自动读取使用的是本机 Codex 的 app-server 协议，可能随 Codex 版本变化。读取失败时会保留上次成功的数据并提示失败，也可继续手动输入。刷新仅在应用运行期间进行。
+DeepSeek API Key 保存在 macOS 钥匙串，仅用于请求 `https://api.deepseek.com/user/balance`；余额快照保存在本地。发布包不含用户 Key、Cookie 或用量快照。读取失败时卡片保留上次成功的数据并提示失败；Codex 仍可手动录入。
+
+### 从源码构建
+
+在装有 Swift 工具链与 macOS 26 SDK 的 Mac 上运行 `python3 scripts/build.py`。脚本在 `work/release/` 生成 Apple 芯片版 `UsageDesk.zip`，解压即可得到应用；可用 `USAGEDESK_SDK` 指定 SDK 路径。发布包使用临时签名，未经过 Apple 公证。
 
 ## English
 
-### v0.1.3 features
+### What's new in v0.2.0
 
-v0.1.3 adds DeepSeek Open Platform **API account balance**, a Chinese/English setting, and a choice between switching cards and displaying both vertically. It does not measure DeepSeek web chat usage or API token consumption. Your DeepSeek API key stays in the macOS Keychain and is used only for the official balance endpoint; you can remove it in Settings. The Codex and DeepSeek cards use knot and whale marks styled for the dark cards.
-
-Choose the layout and language from the UsageDesk menu bar icon. In switch mode, click the card title and chevron to choose Codex or DeepSeek; vertical mode shows both cards. The gear on each card opens its own Codex manual update or DeepSeek API settings.
-
-Download [`UsageDesk.zip`](UsageDesk.zip), unzip it, and move `UsageDesk.app` to Applications. If you use an older release, replace the old app; the Codex usage data stays in the same application support folder.
-
-UsageDesk is a movable, always-on-top macOS desktop card for your current Codex account. It shows the **remaining** allowance, used percentage, and reset time for each quota window actually returned by your Codex account. Five-hour and weekly windows are examples, not assumptions about every plan. Codex refreshes every 10 seconds by default; you can choose 30 seconds, 1 minute, 5 minutes, or a custom interval from 10 to 3,600 seconds. DeepSeek balance refreshes every 60 seconds by default, with options from 30 seconds to 15 minutes.
+- Cards, text, the title picker, and settings now follow macOS Light and Dark Mode. Small header controls use system glass where supported, with an opaque fallback for Reduce Transparency and less animation for Reduce Motion.
+- Codex uses a neutral surface with a restrained indigo accent; DeepSeek keeps its blue identity. The new double-ring app icon represents remaining capacity for Codex on the outer ring and DeepSeek on the inner ring.
+- Fixed low-contrast picker text in Light Mode and the vertical mismatch between DeepSeek amounts and their “Available balance” labels. Dragging from empty card space now tracks screen coordinates to avoid jumping and flickering.
+- Title-based provider selection, switch/vertical layouts, Chinese/English, configurable refresh intervals, and always-on-top remain available. See the [detailed bilingual release notes](docs/releases/v0.2.0.md).
 
 ### Install and use
 
-1. Download and unzip [UsageDesk.zip](UsageDesk.zip), then move `UsageDesk.app` to Applications. It requires an Apple silicon Mac running macOS 15 or later.
-2. Open the app. Drag any empty area of the card to move it; the position is saved.
-3. Use the bar-chart icon in the menu bar to choose the card layout and language, change the refresh interval or always-on-top setting, show or hide the card, or quit.
+1. Download and unzip [UsageDesk.zip](UsageDesk.zip), then move `UsageDesk.app` to Applications. It requires an Apple silicon Mac running macOS 15 or later. To upgrade, quit the old app and replace it; local settings and usage data remain in place.
+2. Open the app. Drag any empty area to move the card; its position is saved. The gear opens settings for the current card. Click the title and chevron to choose Codex or DeepSeek.
+3. Use the UsageDesk menu bar icon to choose layout, language, refresh intervals, and always-on-top, or to show, hide, and quit the app. Vertical layout displays both cards at once.
 
-On the DeepSeek card, click the gear, enter your own DeepSeek Open Platform API key, test the connection, then save it. You can change the balance refresh interval or remove the key in Settings.
+**Codex:** UsageDesk asks the locally signed-in `codex app-server` for `account/rateLimits/read` over standard input/output. It shows the quota windows, used percentage, and reset times actually returned for your account. The large figure is the **remaining percentage**. Five-hour and weekly windows are examples; your plan determines which windows exist. Codex refreshes every 10 seconds by default, with 30-second, 1-minute, 5-minute, or custom 10–3,600-second options.
 
-A fresh installation shows **no preloaded usage figures**. UsageDesk starts the locally installed, signed-in `codex app-server` and reads `account/rateLimits/read`. After a successful read, the card shows only the windows returned for that account. Missing windows are hidden. If Codex is unavailable or not signed in, you can enter the percentages manually or sync them with Shortcuts.
-
-In the command below, `--primary` and `--secondary` are the **used percentages** for the primary and secondary windows. Provide only the windows your account has. The large numbers show the corresponding **remaining percentages**:
+If local Codex is unavailable, enter usage manually in the card settings or sync from Shortcuts. `--primary` and `--secondary` take **used percentages**; provide only the windows your account has:
 
 ```sh
 "$HOME/Applications/UsageDesk.app/Contents/MacOS/UsageDesk" --primary 26 --secondary 47
 ```
 
-The older `--five` and `--week` flags remain available as aliases for `--primary` and `--secondary`. Omitted windows retain their previous manual values; use `--clear-primary` or `--clear-secondary` to hide a window after a plan change.
+The old `--five` and `--week` flags remain aliases for the primary and secondary windows. Omitted manual windows keep their previous values. Use `--clear-primary` or `--clear-secondary` to hide a window after a plan change.
 
-The “Open official dashboard” link opens the [Codex usage page](https://chatgpt.com/codex/settings/usage) in your browser.
+**DeepSeek:** Open the DeepSeek card's gear, enter your own Open Platform API key, test it, and save. The card shows available balance by currency, split into granted and topped-up amounts. It refreshes every 60 seconds by default, with options from 30 seconds to 15 minutes. It **does not measure web chat usage, API request counts, or token consumption**.
 
 ### Data and privacy
 
-The Codex code does not read, store, or upload cookies or `~/.codex/auth.json`. It starts a **local** Codex subprocess, requests usage over standard input/output, and stores the result for the current macOS user in `~/Library/Application Support/UsageDesk/usage.json`. Codex itself may contact OpenAI services. The DeepSeek API key you enter is kept in the macOS Keychain and sent only to `https://api.deepseek.com/user/balance` to read your balance; balance snapshots remain local. The download contains no user's credentials or usage snapshot.
+The Codex integration does not read, store, or upload cookies or `~/.codex/auth.json`. It talks to a **local** Codex subprocess over standard input/output; Codex itself may contact OpenAI to obtain account data. Usage results stay in the current user's `~/Library/Application Support/UsageDesk/usage.json`.
 
-Automatic reading depends on Codex's local app-server protocol, which may change. On failure, UsageDesk retains the last successful reading and shows an error. Manual entry remains available. Refreshing runs only while the app is open.
+The DeepSeek API key stays in the macOS Keychain and is sent only to `https://api.deepseek.com/user/balance`; balance snapshots remain local. The release ZIP contains no user key, cookie, or usage snapshot. On read failure, the card keeps the last successful result and shows an error; manual Codex entry remains available.
+
+### Build from source
+
+On a Mac with a Swift toolchain and macOS 26 SDK, run `python3 scripts/build.py`. It creates the Apple silicon `UsageDesk.zip` under `work/release/`; unzip it to get the app. Set `USAGEDESK_SDK` to choose an SDK path. The release app is ad hoc signed and is not notarized by Apple.

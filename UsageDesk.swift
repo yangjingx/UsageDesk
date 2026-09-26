@@ -10,10 +10,13 @@ private func dataFolder() -> URL {
         return URL(fileURLWithPath: override, isDirectory: true)
     }
     #if USAGEDESK_TEST
+    if let path = Bundle.main.object(forInfoDictionaryKey: "UsageDeskTestDataPath") as? String {
+        return URL(fileURLWithPath: path, isDirectory: true)
+    }
     return URL(fileURLWithPath: "/private/tmp/UsageDeskPreviewData", isDirectory: true)
     #elseif USAGEDESK_PREVIEW
     return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("UsageDeskPreview", isDirectory: true)
+        .appendingPathComponent("UsageDeskPreview020", isDirectory: true)
     #else
     return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("UsageDesk", isDirectory: true)
@@ -220,6 +223,7 @@ private func updatedText(_ date: Date?, language: AppLanguage) -> String {
 }
 
 struct MeterRow: View {
+    @Environment(\.colorScheme) private var scheme
     let title: String
     let symbol: String
     let used: Double?
@@ -234,21 +238,21 @@ struct MeterRow: View {
             HStack(alignment: .firstTextBaseline) {
                 Label(title, systemImage: symbol)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                 Spacer()
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text(localized(language, "剩余", "Left"))
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.65))
+                        .foregroundStyle(.secondary)
                     Text(percentText(remaining))
                         .font(.system(size: 25, weight: .bold, design: .rounded))
                         .monospacedDigit()
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                 }
             }
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(.white.opacity(0.14))
+                    Capsule().fill(UsagePalette(scheme: scheme).track)
                     Capsule().fill(tint)
                         .frame(width: proxy.size.width * CGFloat(min(max(remaining ?? 0, 0), 100) / 100))
                 }
@@ -261,26 +265,29 @@ struct MeterRow: View {
                 Text(resetText(reset, language: language))
             }
             .font(.system(size: 11))
-            .foregroundStyle(.white.opacity(0.65))
+            .foregroundStyle(.secondary)
         }
     }
 }
 
 struct WidgetCard: View {
+    @Environment(\.colorScheme) private var scheme
     @ObservedObject var store: UsageStore
     @ObservedObject var preferences: AppPreferences
     let onRefresh: () -> Void
     @State private var showEditor = false
 
+    private var palette: UsagePalette { UsagePalette(scheme: scheme) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 19) {
             HStack(spacing: 10) {
-                BrandLogo(name: "codex-mark", fallback: "chart.bar.fill")
+                BrandLogo(name: "codex-mark", fallback: "chevron.left.forwardslash.chevron.right")
                 VStack(alignment: .leading, spacing: 2) {
                     ProviderTitle(provider: .codex, preferences: preferences)
                     Text(updatedText(store.snapshot.updatedAt, language: preferences.language))
                         .font(.system(size: 10))
-                        .foregroundStyle(.white.opacity(0.57))
+                        .foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button(action: onRefresh) {
@@ -289,8 +296,9 @@ struct WidgetCard: View {
                 }
                 .buttonStyle(.plain)
                 .frame(width: 27, height: 30)
+                .background(HeaderActionBackground().frame(width: 28, height: 28))
                 .background(InteractiveRegion(id: "codex.refresh"))
-                .foregroundStyle(.white.opacity(0.8))
+                .foregroundStyle(.primary)
                 .disabled(store.isRefreshing)
                 .help(localized(preferences.language, "立即刷新用量", "Refresh usage now"))
                 Button { showEditor = true } label: {
@@ -299,8 +307,9 @@ struct WidgetCard: View {
                 }
                 .buttonStyle(.plain)
                 .frame(width: 27, height: 30)
+                .background(HeaderActionBackground().frame(width: 28, height: 28))
                 .background(InteractiveRegion(id: "codex.edit"))
-                .foregroundStyle(.white.opacity(0.8))
+                .foregroundStyle(.primary)
                 .help(localized(preferences.language, "Codex 设置与手动更新", "Codex settings and manual update"))
             }
 
@@ -309,21 +318,21 @@ struct WidgetCard: View {
                                             fallback: localized(preferences.language, "主要额度", "Primary limit"),
                                             language: preferences.language),
                          symbol: "clock", used: used, reset: store.snapshot.fiveReset,
-                         tint: Color(red: 0.41, green: 0.91, blue: 0.77), language: preferences.language)
+                         tint: palette.codex, language: preferences.language)
             }
             if let used = store.snapshot.weekUsed {
                 MeterRow(title: windowTitle(store.snapshot.secondaryDurationMins,
                                             fallback: localized(preferences.language, "附加额度", "Secondary limit"),
                                             language: preferences.language),
                          symbol: "clock", used: used, reset: store.snapshot.weekReset,
-                         tint: Color(red: 0.59, green: 0.70, blue: 1.0), language: preferences.language)
+                         tint: palette.secondary, language: preferences.language)
             }
             if store.snapshot.fiveUsed == nil && store.snapshot.weekUsed == nil {
                 Text(store.isRefreshing ?
                      localized(preferences.language, "正在读取本机额度…", "Reading local limits…") :
                      localized(preferences.language, "当前账户没有可显示的用量窗口", "No usage windows for this account"))
                     .font(.system(size: 12))
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 95)
             }
 
@@ -335,7 +344,7 @@ struct WidgetCard: View {
                        localized(preferences.language, "自动同步", "Auto sync")) :
                       localized(preferences.language, "同步失败 · 显示上次数据", "Sync failed · showing last data")))
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.44))
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Button(localized(preferences.language, "打开官方面板 ↗", "Open dashboard ↗")) {
                     NSWorkspace.shared.open(dashboardURL)
@@ -343,20 +352,13 @@ struct WidgetCard: View {
                     .buttonStyle(.plain)
                     .background(InteractiveRegion(id: "codex.dashboard"))
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(Color(red: 0.61, green: 0.93, blue: 0.84))
+                    .foregroundStyle(palette.codex)
+                    .underline()
             }
         }
         .padding(21)
         .frame(width: 330, height: 268)
-        .background {
-            RoundedRectangle(cornerRadius: 23)
-                .fill(LinearGradient(colors: [Color(red: 0.11, green: 0.16, blue: 0.22),
-                                              Color(red: 0.07, green: 0.09, blue: 0.15)],
-                                     startPoint: .topLeading, endPoint: .bottomTrailing))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 23).stroke(.white.opacity(0.15), lineWidth: 1)
-                }
-        }
+        .background { CardSurface(accent: palette.codex) }
         .sheet(isPresented: $showEditor) { UsageEditor(store: store, preferences: preferences) }
     }
 }
@@ -466,12 +468,14 @@ private func money(_ value: Decimal, currency: String) -> String {
 }
 
 struct BrandLogo: View {
+    @Environment(\.colorScheme) private var scheme
     let name: String
     let fallback: String
 
     var body: some View {
         Group {
-            if let url = Bundle.main.url(forResource: name, withExtension: "png"),
+            if name != "codex-mark",
+               let url = Bundle.main.url(forResource: name, withExtension: "png"),
                let image = NSImage(contentsOf: url) {
                 Image(nsImage: image)
                     .resizable()
@@ -480,12 +484,12 @@ struct BrandLogo: View {
                     .padding(4)
             } else {
                 Image(systemName: fallback)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(UsagePalette(scheme: scheme).codex)
             }
         }
         .frame(width: 34, height: 34)
-        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 9))
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 9))
         .accessibilityLabel(name == "codex-mark" ? "Codex" : "DeepSeek")
     }
 }
@@ -507,9 +511,9 @@ struct ProviderTitle: View {
                         .font(.system(size: 15, weight: .bold))
                     Image(systemName: "chevron.down")
                         .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.7))
+                        .foregroundStyle(.secondary)
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -532,25 +536,28 @@ struct ProviderTitle: View {
                             .frame(width: 130)
                         }
                         .buttonStyle(.plain)
+                        .foregroundStyle(.primary)
                         .padding(8)
                     }
                 }
                 .padding(5)
-                .background(Color(red: 0.12, green: 0.16, blue: 0.25), in: RoundedRectangle(cornerRadius: 12))
             }
         } else {
             Text(title)
                 .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
         }
     }
 }
 
 struct DeepSeekCard: View {
+    @Environment(\.colorScheme) private var scheme
     @ObservedObject var store: DeepSeekStore
     @ObservedObject var preferences: AppPreferences
     let onRefresh: () -> Void
     let onSettings: () -> Void
+
+    private var palette: UsagePalette { UsagePalette(scheme: scheme) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
@@ -560,18 +567,20 @@ struct DeepSeekCard: View {
                     ProviderTitle(provider: .deepSeek, preferences: preferences)
                     Text(updatedText(store.snapshot?.updatedAt, language: preferences.language))
                         .font(.system(size: 10))
-                        .foregroundStyle(.white.opacity(0.57))
+                        .foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button(action: onRefresh) { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.plain)
                     .frame(width: 27, height: 30)
+                    .background(HeaderActionBackground().frame(width: 28, height: 28))
                     .background(InteractiveRegion(id: "deepseek.refresh"))
                     .disabled(!store.hasCredential || store.isRefreshing)
                     .help(localized(preferences.language, "刷新余额", "Refresh balance"))
                 Button(action: onSettings) { Image(systemName: "gearshape") }
                     .buttonStyle(.plain)
                     .frame(width: 27, height: 30)
+                    .background(HeaderActionBackground().frame(width: 28, height: 28))
                     .background(InteractiveRegion(id: "deepseek.settings"))
                     .help(localized(preferences.language, "DeepSeek 设置", "DeepSeek settings"))
             }
@@ -584,15 +593,15 @@ struct DeepSeekCard: View {
                 Text(localized(preferences.language, "输入你自己的 API Key 后显示账户余额。",
                                "Enter your own API key to see your account balance."))
                     .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.65))
+                    .foregroundStyle(.secondary)
                 Spacer(minLength: 10)
             } else if let snapshot = store.snapshot {
                 ForEach(snapshot.balances, id: \.currency) { balance in
                     VStack(alignment: .leading, spacing: 4) {
-                        HStack(alignment: .firstTextBaseline) {
+                        HStack(alignment: .center) {
                             Text(localized(preferences.language, "可用余额", "Available balance"))
                                 .font(.system(size: 11))
-                                .foregroundStyle(.white.opacity(0.65))
+                                .foregroundStyle(.secondary)
                             Spacer()
                             Text(money(balance.total, currency: balance.currency))
                                 .font(.system(size: 23, weight: .bold, design: .rounded))
@@ -602,7 +611,7 @@ struct DeepSeekCard: View {
                                        "赠金 \(money(balance.granted, currency: balance.currency)) · 充值 \(money(balance.toppedUp, currency: balance.currency))",
                                        "Granted \(money(balance.granted, currency: balance.currency)) · Paid \(money(balance.toppedUp, currency: balance.currency))"))
                             .font(.system(size: 10))
-                            .foregroundStyle(.white.opacity(0.6))
+                            .foregroundStyle(.secondary)
                     }
                 }
                 if snapshot.balances.isEmpty {
@@ -613,13 +622,13 @@ struct DeepSeekCard: View {
                 Text(snapshot.isAvailable ? localized(preferences.language, "可用于 API 调用", "Available for API calls") :
                      localized(preferences.language, "余额不可用于 API 调用", "Unavailable for API calls"))
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(snapshot.isAvailable ? Color(red: 0.61, green: 0.93, blue: 0.84) : .orange)
+                    .foregroundStyle(snapshot.isAvailable ? palette.deepSeek : .orange)
             } else {
                 Spacer(minLength: 10)
                 Text(store.isRefreshing ? localized(preferences.language, "正在读取余额…", "Reading balance…") :
                      localized(preferences.language, "等待余额数据", "Waiting for balance data"))
                     .font(.system(size: 12))
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(.secondary)
                 Spacer(minLength: 10)
             }
 
@@ -629,7 +638,7 @@ struct DeepSeekCard: View {
                       localized(preferences.language, "API 余额", "API balance")) :
                      localized(preferences.language, "同步失败 · 显示上次数据", "Sync failed · showing last data"))
                     .font(.system(size: 10))
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Button(localized(preferences.language, "打开 DeepSeek ↗", "Open DeepSeek ↗")) {
                     NSWorkspace.shared.open(URL(string: "https://platform.deepseek.com")!)
@@ -637,19 +646,13 @@ struct DeepSeekCard: View {
                 .buttonStyle(.plain)
                 .background(InteractiveRegion(id: "deepseek.dashboard"))
                 .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(Color(red: 0.68, green: 0.80, blue: 1))
+                .foregroundStyle(palette.deepSeek)
             }
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(.primary)
         .padding(21)
         .frame(width: 330, height: 268)
-        .background {
-            RoundedRectangle(cornerRadius: 23)
-                .fill(LinearGradient(colors: [Color(red: 0.11, green: 0.15, blue: 0.25),
-                                              Color(red: 0.07, green: 0.09, blue: 0.16)],
-                                     startPoint: .topLeading, endPoint: .bottomTrailing))
-                .overlay { RoundedRectangle(cornerRadius: 23).stroke(.white.opacity(0.15), lineWidth: 1) }
-        }
+        .background { CardSurface(accent: palette.deepSeek) }
     }
 }
 
@@ -745,6 +748,7 @@ struct UsageDeskSettings: View {
 
 struct DesktopCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
     @ObservedObject var codex: UsageStore
     @ObservedObject var deepSeek: DeepSeekStore
     @ObservedObject var preferences: AppPreferences
@@ -793,6 +797,15 @@ struct DesktopCard: View {
             UsageDeskSettings(preferences: preferences, deepSeek: deepSeek,
                               onCredentialChanged: onCredentialChanged)
         }
+        .onAppear { updateApplicationIcon(for: colorScheme) }
+        .onChange(of: colorScheme) { _, newScheme in updateApplicationIcon(for: newScheme) }
+    }
+
+    private func updateApplicationIcon(for scheme: ColorScheme) {
+        let name = scheme == .dark ? "UsageDesk-icon-dark" : "UsageDesk-icon-light"
+        guard let url = Bundle.main.url(forResource: name, withExtension: "png"),
+              let icon = NSImage(contentsOf: url) else { return }
+        NSApp.applicationIconImage = icon
     }
 }
 
@@ -834,26 +847,42 @@ final class CardWindow: NSWindow {
     override func animationResizeTime(_ newFrame: NSRect) -> TimeInterval { 0.22 }
 
     var interactiveRegions: [String: NSRect] = [:]
-    private var dragAnchor: NSPoint?
+    private var frameSaveTimer: Timer?
+    private var dragStartPointer: NSPoint?
+    private var dragStartFrameOrigin: NSPoint?
+
+    func trackFrameChanges() {
+        NotificationCenter.default.addObserver(self, selector: #selector(windowDidMove),
+                                               name: NSWindow.didMoveNotification, object: self)
+    }
+
+    @objc private func windowDidMove(_ notification: Notification) {
+        frameSaveTimer?.invalidate()
+        frameSaveTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: false) { [weak self] _ in
+            self?.saveFrame(usingName: "UsageDeskWindow")
+        }
+    }
 
     override func sendEvent(_ event: NSEvent) {
         switch event.type {
         case .leftMouseDown:
             let point = event.locationInWindow
             if !interactiveRegions.values.contains(where: { $0.contains(point) }) {
-                dragAnchor = point
+                dragStartPointer = convertPoint(toScreen: point)
+                dragStartFrameOrigin = frame.origin
                 return
             }
         case .leftMouseDragged:
-            if let dragAnchor {
-                let point = event.locationInWindow
-                setFrameOrigin(NSPoint(x: frame.origin.x + point.x - dragAnchor.x,
-                                       y: frame.origin.y + point.y - dragAnchor.y))
+            if let pointer = dragStartPointer, let origin = dragStartFrameOrigin {
+                let current = NSEvent.mouseLocation
+                setFrameOrigin(NSPoint(x: origin.x + current.x - pointer.x,
+                                       y: origin.y + current.y - pointer.y))
                 return
             }
         case .leftMouseUp:
-            if dragAnchor != nil {
-                dragAnchor = nil
+            if dragStartPointer != nil {
+                dragStartPointer = nil
+                dragStartFrameOrigin = nil
                 saveFrame(usingName: "UsageDeskWindow")
                 return
             }
@@ -896,11 +925,19 @@ final class AppController: NSObject, NSApplicationDelegate {
             onCredentialChanged: { [weak self] in self?.credentialChanged() }))
         window.backgroundColor = .clear
         window.isOpaque = false
+        #if USAGEDESK_TEST
+        if let forced = ProcessInfo.processInfo.environment["USAGEDESK_TEST_APPEARANCE"]
+            ?? (Bundle.main.object(forInfoDictionaryKey: "UsageDeskTestAppearance") as? String) {
+            window.appearance = NSAppearance(named: forced == "dark" ? .darkAqua : .aqua)
+        }
+        #endif
         window.hasShadow = true
+        window.isMovable = true
         window.isMovableByWindowBackground = false
         window.level = keepOnTop ? .floating : .normal
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.setFrameAutosaveName("UsageDeskWindow")
+        window.trackFrameChanges()
         if !window.setFrameUsingName("UsageDeskWindow") {
             window.center()
         }
